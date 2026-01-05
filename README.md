@@ -1,404 +1,77 @@
-# MikroTik PPPoE Monitor API
+*** Begin Patch
+*** Update File: c:\Users\railson.nogueira\OneDrive - Corporativo\Documentos\rainet.com.br\README.md
+@@
+# Rainet — MikroTik PPPoE Monitor (Mule 4)
 
-## 📋 Descrição
+Breve: API para monitoramento de conexões PPPoE em roteadores MikroTik, implementada em Mule 4 com integração RouterOS e autenticação JWT.
 
-Aplicação MuleSoft 4.9 completa para monitoramento de conexões PPPoE de roteador MikroTik usando RouterOS API, com autenticação JWT e painéis diferenciados para administradores e clientes.
+Status do repositório
+- Branch principal enviado: `dev1` → https://github.com/railsonnn/rainet.com.br (branch dev1)
 
-## 🏗️ Arquitetura
+Principais arquivos
+- `src/main/mule/global.xml` — propriedades, HTTP Listener, secure properties
+- `src/main/mule/security.xml` — autenticação JWT e roles
+- `src/main/mule/mikrotik-integration.xml` — integração com RouterOS
+- `src/main/mule/api.xml` — endpoints REST (admin / client)
 
-### Componentes Principais
-
-- **global.xml**: Configurações globais (HTTP Listener, Configuration Properties, Secure Properties)
-- **security.xml**: Autenticação JWT e validação de tokens
-- **mikrotik-integration.xml**: Integração com MikroTik RouterOS API
-- **api.xml**: Endpoints REST para admin e clientes
-
-### Tecnologias
-
-- **Mule Runtime**: 4.9.3
-- **Java**: 17
-- **MikroTik RouterOS API**: 3.0.8
-- **JWT**: Auth0 Java JWT 4.4.0
-
-## 🚀 Endpoints da API
-
-### Autenticação
-
-#### POST /api/auth/login
-Autentica usuário e retorna JWT token.
-
-**Request:**
-```json
-{
-  "username": "admin",
-  "password": "admin123"
-}
-```
-
-**Response:**
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer",
-  "role": "ADMIN"
-}
-```
-
-### Endpoints Admin (Requer role ADMIN)
-
-#### GET /api/admin/system/resource
-Retorna informações do sistema MikroTik (CPU, memória, uptime).
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Response:**
-```json
-{
-  "uptime": "1d 2h 30m",
-  "cpu-load": 5,
-  "free-memory": 512000000,
-  "total-memory": 1024000000
-}
-```
-
-#### GET /api/admin/pppoe/overview
-Retorna visão geral de todos os clientes PPPoE.
-
-**Response:**
-```json
-[
-  {
-    "username": "cliente1",
-    "plan_profile": "10MB",
-    "comment": "Cliente teste",
-    "online": true,
-    "ip_address": "10.0.0.10",
-    "uptime": "2h30m",
-    "rx_bytes": 1048576,
-    "tx_bytes": 524288
-  }
-]
-```
-
-#### GET /api/admin/logs?topic=pppoe&limit=100
-Retorna logs do MikroTik com filtros opcionais.
-
-**Query Parameters:**
-- `topic`: pppoe | error | warning | all (default: all)
-- `limit`: número de logs (default: 100)
-
-### Endpoints Cliente (Requer role CLIENT)
-
-#### GET /api/client/pppoe/me
-Retorna dados do cliente autenticado.
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Response:**
-```json
-{
-  "username": "cliente1",
-  "plan_profile": "10MB",
-  "online": true,
-  "ip_address": "10.0.0.10",
-  "uptime": "2h30m",
-  "rx_bytes": 1048576,
-  "tx_bytes": 524288
-}
-```
-
-#### GET /api/client/logs?limit=100
-Retorna logs relacionados ao cliente autenticado.
-
-#### GET /api/client/traffic
-Retorna tráfego em tempo real do cliente.
-
-**Response:**
-```json
-{
-  "username": "cliente1",
-  "online": true,
-  "rx_bytes": 1048576,
-  "tx_bytes": 524288
-}
-```
-
-## ⚙️ Configuração Local
-
-### 1. Pré-requisitos
-
+Requisitos
 - Java 17
-- Maven 3.9+
-- Anypoint Studio 7.x (opcional)
-- MikroTik RouterOS com API habilitada
+- Maven 3.8+ (3.9 recomendado)
+- Mule Runtime 4.9.x (prod: 4.9.3)
 
-### 2. Configurar Propriedades
-
-Edite `src/main/resources/config-dev.yaml`:
-
-```yaml
-http:
-  port: "8081"
-
-mikrotik:
-  api:
-    host: "192.168.88.1"  # IP do seu MikroTik
-    port: "8728"
-    user: "admin"
-
-jwt:
-  secret: "dev-secret-key-change-in-production"
-  expiration:
-    minutes: "1440"
-
-users:
-  admin:
-    password: "admin123"
-    role: "ADMIN"
-  cliente1:
-    password: "cliente123"
-    role: "CLIENT"
-```
-
-### 3. Configurar Senha Segura do MikroTik
-
-#### Opção A: Usar senha em texto (apenas desenvolvimento)
-
-Edite `src/main/resources/config-secure.yaml`:
-```yaml
-mikrotik:
-  api:
-    password: "![senha_mikrotik]"
-```
-
-#### Opção B: Encriptar senha (recomendado)
+Build e execução local
+1. Compilar:
 
 ```bash
-# Gerar senha encriptada
-java -cp mule-secure-configuration-property-module-1.3.0.jar \
-  com.mulesoft.modules.secure.tools.SecurePropertiesTool \
-  string encrypt AES CBC mulesoft123456 "sua_senha_mikrotik" --use-random-iv
-
-# Copiar o resultado (ex: ![encrypted_value]) para config-secure.yaml
+mvn -U clean package
 ```
 
-### 4. Executar Localmente
+2. Executar (desenvolvimento):
 
 ```bash
-# Compilar
-mvn clean package
-
-# Executar
 mvn mule:run
+# ou execute via Anypoint Studio
 ```
 
-A API estará disponível em: `http://localhost:8081/api`
+A API ficará disponível em `http://localhost:8081/api` (ver `config-dev.yaml`).
 
-### 5. Testar Endpoints
+Configuração
+- Arquivos de configuração: `src/main/resources/config-dev.yaml`, `config-prod.yaml`, `config-secure.yaml`.
+- Nunca commite segredos em texto claro. Use Secure Properties (`${secure::...}`) ou variáveis de ambiente.
+
+Testes
+- Executar MUnit (quando adicionados):
 
 ```bash
-# Login como admin
-curl -X POST http://localhost:8081/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}'
-
-# Usar token retornado
-export TOKEN="eyJhbGc..."
-
-# Testar endpoint admin
-curl -X GET http://localhost:8081/api/admin/system/resource \
-  -H "Authorization: Bearer $TOKEN"
-
-# Login como cliente
-curl -X POST http://localhost:8081/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"cliente1","password":"cliente123"}'
-
-# Testar endpoint cliente
-curl -X GET http://localhost:8081/api/client/pppoe/me \
-  -H "Authorization: Bearer $TOKEN"
+mvn test
 ```
 
-## ☁️ Deploy no CloudHub 2.0
+Deploy
+- Deploy via Maven/CloudHub ou Anypoint Studio; ver `pom.xml` e `IMPLEMENTATION-NOTES.md` para parâmetros de deploy.
 
-### 1. Preparar Propriedades de Produção
+Segurança — pontos importantes
+- Troque `JWT_SECRET` por valor de produção (≥ 32 chars).  
+- Encripte senha do MikroTik com `SecurePropertiesTool` e use `${secure::...}`.  
+- Habilite HTTPS e rate limiting no API Manager.
 
-Crie `src/main/resources/config-prod.yaml`:
+Problemas conhecidos
+- `mule-java-module` está em versão antiga no projeto; revisar `pom.xml` antes de atualizar.  
+- Integração MikroTik abre/fecha a conexão por requisição — implementar connection pooling para melhorar latência.
 
-```yaml
-http:
-  port: "8081"
+Contato / manutenção
+- Documentação RAML: `src/main/resources/api/mikrotik-monitor-api.raml`  
+- Notas de implementação: `IMPLEMENTATION-NOTES.md`
 
-mikrotik:
-  api:
-    host: "${MIKROTIK_HOST}"
-    port: "${MIKROTIK_PORT}"
-    user: "${MIKROTIK_USER}"
+Contribuição
+- Para contribuir, crie branch a partir de `dev1`, faça commits claros e abra PR para revisão.
 
-jwt:
-  secret: "${JWT_SECRET}"
-  expiration:
-    minutes: "1440"
-```
+Licença
+- (adicionar licença aqui, se aplicável)
 
-### 2. Configurar Variáveis de Ambiente no Runtime Manager
+---
 
-No Anypoint Platform > Runtime Manager > Application > Settings > Properties:
+Arquivo atualizado e commitado na branch `dev1`.
 
-```properties
-# Environment
-mule.env=prod
-
-# MikroTik Configuration
-MIKROTIK_HOST=seu-mikrotik.exemplo.com
-MIKROTIK_PORT=8728
-MIKROTIK_USER=api-user
-
-# JWT Configuration
-JWT_SECRET=seu-secret-super-seguro-aqui-min-256-bits
-
-# Secure Key
-secure.key=sua-chave-de-encriptacao-aqui
-```
-
-### 3. Configurar Propriedades Seguras
-
-No Runtime Manager > Application > Settings > Properties > Secure:
-
-```properties
-mikrotik.api.password=![valor_encriptado_aqui]
-```
-
-Para gerar o valor encriptado:
-
-```bash
-java -cp mule-secure-configuration-property-module-1.3.0.jar \
-  com.mulesoft.modules.secure.tools.SecurePropertiesTool \
-  string encrypt AES CBC sua-chave-de-encriptacao-aqui "senha_mikrotik" --use-random-iv
-```
-
-### 4. Deploy via Maven
-
-```bash
-# Configurar credenciais no ~/.m2/settings.xml
-<server>
-  <id>anypoint-exchange-v3</id>
-  <username>seu-username</username>
-  <password>sua-senha</password>
-</server>
-
-# Deploy
-mvn clean deploy -DmuleDeploy \
-  -Dmule.version=4.9.3 \
-  -Danypoint.platform.client_id=seu-client-id \
-  -Danypoint.platform.client_secret=seu-client-secret \
-  -Dcloudhub.environment=Production \
-  -Dcloudhub.region=us-east-2 \
-  -Dcloudhub.workers=1 \
-  -Dcloudhub.workerType=MICRO
-```
-
-### 5. Deploy via Anypoint Studio
-
-1. Right-click no projeto > Anypoint Platform > Deploy to CloudHub
-2. Selecione:
-   - **Environment**: Production
-   - **Runtime version**: 4.9.3
-   - **Worker size**: 0.1 vCores (MICRO)
-   - **Workers**: 1
-3. Configure as propriedades na aba "Properties"
-4. Click "Deploy Application"
-
-### 6. Configurar Recursos CloudHub
-
-#### vCores Recomendados
-
-- **Desenvolvimento/Teste**: 0.1 vCores (MICRO)
-- **Produção (baixo tráfego)**: 0.2 vCores (SMALL)
-- **Produção (médio tráfego)**: 1 vCore (MEDIUM)
-
-#### Workers
-
-- **Desenvolvimento**: 1 worker
-- **Produção**: 2+ workers (para alta disponibilidade)
-
-### 7. Verificar Deploy
-
-```bash
-# Obter URL da aplicação
-# Ex: https://mikrotik-monitor.us-e2.cloudhub.io
-
-# Testar health
-curl https://mikrotik-monitor.us-e2.cloudhub.io/api/auth/login \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}'
-```
-
-## 🔒 Segurança
-
-### Boas Práticas
-
-1. **JWT Secret**: Use uma chave forte (mínimo 256 bits) em produção
-2. **Senhas**: Sempre encripte senhas usando Secure Properties
-3. **HTTPS**: Configure HTTPS no CloudHub ou use API Gateway
-4. **Rate Limiting**: Implemente rate limiting no API Manager
-5. **IP Whitelist**: Restrinja acesso ao MikroTik por IP
-
-### Políticas Recomendadas (API Manager)
-
-- **Rate Limiting**: 100 requests/minuto por cliente
-- **Client ID Enforcement**: Para controle de acesso
-- **IP Whitelist**: Apenas IPs confiáveis
-- **CORS**: Configure para frontend específico
-
-## 📊 Monitoramento
-
-### Logs
-
-Os logs estão estruturados com prefixo `[FLOW_NAME]` para fácil rastreamento:
-
-```
-[flow-auth-login] - Login attempt for user: admin
-[subflow-validate-jwt] - JWT validated successfully for user: admin, role: ADMIN
-[flow-admin-pppoe-overview-get] - Response sent successfully with 5 clients
-```
-
-### Métricas CloudHub
-
-Monitore no Runtime Manager:
-
-- **CPU Usage**: Deve ficar abaixo de 70%
-- **Memory Usage**: Deve ficar abaixo de 80%
-- **Response Time**: Endpoints devem responder em < 2s
-- **Error Rate**: Deve ser < 1%
-
-### Alertas Recomendados
-
-- CPU > 80% por 5 minutos
-- Memory > 90% por 5 minutos
-- Error rate > 5% por 1 minuto
-- Application down
-
-## 🧪 Testes
-
-### Testar Autenticação
-
-```bash
-# Admin
-curl -X POST http://localhost:8081/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}'
-
-# Cliente
-curl -X POST http://localhost:8081/api/auth/login \
-  -H "Content-Type: application/json" \
   -d '{"username":"cliente1","password":"cliente123"}'
 ```
 
