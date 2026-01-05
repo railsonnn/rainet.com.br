@@ -1,0 +1,21 @@
+http:
+  port: "8081"
+
+mikrotik:
+  api:
+    host: "187.44.138.42"
+    port: "48728"
+    user: "apiRainet"
+
+jwt:
+  secret: "dev-secret-key-change-in-production"
+  expiration:
+    minutes: "1440"
+
+users:
+  admin:
+    password: "admin123"
+    role: "ADMIN"
+  cliente1:
+    password: "cliente123"
+    role: "CLIENT"

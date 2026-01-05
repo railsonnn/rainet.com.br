@@ -1,0 +1,94 @@
+# ============================================
+# CloudHub 2.0 - Runtime Manager Properties
+# ============================================
+# Configure estas propriedades no Runtime Manager:
+# Application > Settings > Properties
+# ============================================
+
+# Environment Selection
+mule.env=prod
+
+# HTTP Configuration
+# (Não é necessário configurar http.port no CloudHub, usa 8081 por padrão)
+
+# MikroTik API Configuration
+MIKROTIK_HOST=192.168.88.1
+MIKROTIK_PORT=8728
+MIKROTIK_USER=api-user
+
+# JWT Configuration
+# IMPORTANTE: Use uma chave forte de pelo menos 256 bits em produção
+# Exemplo de geração: openssl rand -base64 32
+JWT_SECRET=your-super-secret-jwt-key-min-256-bits-here-change-this
+
+# Secure Properties Encryption Key
+# IMPORTANTE: Use uma chave forte para encriptar propriedades sensíveis
+# Esta chave deve ser a mesma usada para encriptar as senhas
+secure.key=your-encryption-key-here-change-this
+
+# ============================================
+# Secure Properties (Configure na aba Secure)
+# ============================================
+# Application > Settings > Properties > Secure
+# ============================================
+
+# MikroTik API Password (encriptado)
+# Para gerar o valor encriptado, use:
+# java -cp mule-secure-configuration-property-module-1.3.0.jar \
+#   com.mulesoft.modules.secure.tools.SecurePropertiesTool \
+#   string encrypt AES CBC <secure.key> "<senha_mikrotik>" --use-random-iv
+#
+# Exemplo de resultado: ![encrypted_value_here]
+mikrotik.api.password=![encrypted_value_here]
+
+# ============================================
+# Configuração de Workers e vCores
+# ============================================
+# Configure no Runtime Manager durante o deploy:
+#
+# Desenvolvimento/Teste:
+# - Worker Size: 0.1 vCores (MICRO)
+# - Workers: 1
+# - Region: us-east-2 (ou mais próxima)
+#
+# Produção (Baixo Tráfego):
+# - Worker Size: 0.2 vCores (SMALL)
+# - Workers: 1
+# - Region: us-east-2
+#
+# Produção (Médio Tráfego):
+# - Worker Size: 1 vCore (MEDIUM)
+# - Workers: 2 (para alta disponibilidade)
+# - Region: us-east-2
+#
+# Produção (Alto Tráfego):
+# - Worker Size: 2 vCores (LARGE)
+# - Workers: 2+
+# - Region: us-east-2
+
+# ============================================
+# Exemplo de Deploy via Maven
+# ============================================
+# mvn clean deploy -DmuleDeploy \
+#   -Dmule.version=4.9.3 \
+#   -Danypoint.platform.client_id=<seu-client-id> \
+#   -Danypoint.platform.client_secret=<seu-client-secret> \
+#   -Dcloudhub.environment=Production \
+#   -Dcloudhub.region=us-east-2 \
+#   -Dcloudhub.workers=1 \
+#   -Dcloudhub.workerType=MICRO \
+#   -Dcloudhub.applicationName=mikrotik-monitor-api
+
+# ============================================
+# Notas Importantes
+# ============================================
+# 1. NUNCA commite senhas ou chaves em texto plano no repositório
+# 2. Use sempre Secure Properties para dados sensíveis
+# 3. Gere chaves JWT fortes (mínimo 256 bits)
+# 4. Configure HTTPS no CloudHub ou use API Gateway
+# 5. Implemente rate limiting e IP whitelist no API Manager
+# 6. Monitore logs e métricas no Runtime Manager
+# 7. Configure alertas para CPU, memória e erros
+# 8. Faça backup das propriedades de produção
+# 9. Use diferentes chaves de encriptação por ambiente
+# 10. Rotacione chaves JWT periodicamente (ex: a cada 90 dias)

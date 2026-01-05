@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<!-- ========================================== -->
+	<!-- ADMIN ENDPOINTS -->
+	<!-- ========================================== -->
+
+	<!-- GET /admin/system/resource -->
+	<flow name="flow-admin-system-resource-get" doc:name="flow-admin-system-resource-get">
+		<http:listener config-ref="HTTP_Listener_config" path="/admin/system/resource" doc:name="GET /admin/system/resource">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		
+		<logger level="INFO" message="[flow-admin-system-resource-get] - Request received" doc:name="Logger - Request"/>
+		
+		<!-- Validate JWT -->
+		<flow-ref name="subflow-validate-jwt" doc:name="Flow Reference - Validate JWT"/>
+		
+		<!-- Check admin role -->
+		<flow-ref name="subflow-check-admin-role" doc:name="Flow Reference - Check Admin"/>
+		
+		<!-- Get system resource -->
+		<flow-ref name="subflow-get-system-resource" doc:name="Flow Reference - Get System Resource"/>
+		
+		<logger level="INFO" message="[flow-admin-system-resource-get] - Response sent successfully" doc:name="Logger - Response"/>
+		
+		<error-handler>
+			<on-error-propagate type="APP:UNAUTHORIZED, APP:FORBIDDEN" doc:name="On Error Propagate - Auth">
+				<logger level="WARN" message="[flow-admin-system-resource-get] - Authorization error: #[error.description]" doc:name="Logger - Auth Error"/>
+			</on-error-propagate>
+			<on-error-propagate type="ANY" doc:name="On Error Propagate - Any">
+				<logger level="ERROR" message="[flow-admin-system-resource-get] - Error: #[error.description]" doc:name="Logger - Error"/>
+				<ee:transform doc:name="Transform - Error Response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Failed to retrieve system resource: " ++ (error.description default "Unknown error"),
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+	<!-- GET /admin/pppoe/overview -->
+	<flow name="flow-admin-pppoe-overview-get" doc:name="flow-admin-pppoe-overview-get">
+		<http:listener config-ref="HTTP_Listener_config" path="/admin/pppoe/overview" doc:name="GET /admin/pppoe/overview">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		
+		<logger level="INFO" message="[flow-admin-pppoe-overview-get] - Request received" doc:name="Logger - Request"/>
+		
+		<!-- Validate JWT -->
+		<flow-ref name="subflow-validate-jwt" doc:name="Flow Reference - Validate JWT"/>
+		
+		<!-- Check admin role -->
+		<flow-ref name="subflow-check-admin-role" doc:name="Flow Reference - Check Admin"/>
+		
+		<!-- Get PPP secrets -->
+		<flow-ref name="subflow-get-ppp-secrets" doc:name="Flow Reference - Get PPP Secrets"/>
+		<set-variable variableName="secrets" value="#[payload]" doc:name="Set Variable - secrets"/>
+		
+		<!-- Get PPP active connections -->
+		<flow-ref name="subflow-get-ppp-active" doc:name="Flow Reference - Get PPP Active"/>
+		<set-variable variableName="active" value="#[payload]" doc:name="Set Variable - active"/>
+		
+		<!-- Consolidate data -->
+		<ee:transform doc:name="Transform - Consolidate PPPoE Data">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+import consolidatePPPoEData from dwl::pppoe_mapper
+output application/json
+---
+consolidatePPPoEData(vars.secrets, vars.active)]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[flow-admin-pppoe-overview-get] - Response sent successfully with #[sizeOf(payload)] clients" doc:name="Logger - Response"/>
+		
+		<error-handler>
+			<on-error-propagate type="APP:UNAUTHORIZED, APP:FORBIDDEN" doc:name="On Error Propagate - Auth">
+				<logger level="WARN" message="[flow-admin-pppoe-overview-get] - Authorization error: #[error.description]" doc:name="Logger - Auth Error"/>
+			</on-error-propagate>
+			<on-error-propagate type="ANY" doc:name="On Error Propagate - Any">
+				<logger level="ERROR" message="[flow-admin-pppoe-overview-get] - Error: #[error.description]" doc:name="Logger - Error"/>
+				<ee:transform doc:name="Transform - Error Response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Failed to retrieve PPPoE overview: " ++ (error.description default "Unknown error"),
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+	<!-- GET /admin/logs -->
+	<flow name="flow-admin-logs-get" doc:name="flow-admin-logs-get">
+		<http:listener config-ref="HTTP_Listener_config" path="/admin/logs" doc:name="GET /admin/logs">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		
+		<logger level="INFO" message="[flow-admin-logs-get] - Request received with topic: #[attributes.queryParams.topic default 'all'], limit: #[attributes.queryParams.limit default 100]" doc:name="Logger - Request"/>
+		
+		<!-- Validate JWT -->
+		<flow-ref name="subflow-validate-jwt" doc:name="Flow Reference - Validate JWT"/>
+		
+		<!-- Check admin role -->
+		<flow-ref name="subflow-check-admin-role" doc:name="Flow Reference - Check Admin"/>
+		
+		<!-- Map topic to MikroTik topics -->
+		<choice doc:name="Choice - Map Topic">
+			<when expression="#[attributes.queryParams.topic == 'pppoe']">
+				<set-variable variableName="topics" value="pppoe,info" doc:name="Set Variable - topics pppoe"/>
+			</when>
+			<when expression="#[attributes.queryParams.topic == 'error']">
+				<set-variable variableName="topics" value="error" doc:name="Set Variable - topics error"/>
+			</when>
+			<when expression="#[attributes.queryParams.topic == 'warning']">
+				<set-variable variableName="topics" value="warning" doc:name="Set Variable - topics warning"/>
+			</when>
+			<otherwise>
+				<set-variable variableName="topics" value="" doc:name="Set Variable - topics all"/>
+			</otherwise>
+		</choice>
+		
+		<set-variable variableName="limit" value="#[attributes.queryParams.limit default 100]" doc:name="Set Variable - limit"/>
+		
+		<!-- Get logs -->
+		<flow-ref name="subflow-get-logs" doc:name="Flow Reference - Get Logs"/>
+		
+		<logger level="INFO" message="[flow-admin-logs-get] - Response sent successfully with #[sizeOf(payload)] logs" doc:name="Logger - Response"/>
+		
+		<error-handler>
+			<on-error-propagate type="APP:UNAUTHORIZED, APP:FORBIDDEN" doc:name="On Error Propagate - Auth">
+				<logger level="WARN" message="[flow-admin-logs-get] - Authorization error: #[error.description]" doc:name="Logger - Auth Error"/>
+			</on-error-propagate>
+			<on-error-propagate type="ANY" doc:name="On Error Propagate - Any">
+				<logger level="ERROR" message="[flow-admin-logs-get] - Error: #[error.description]" doc:name="Logger - Error"/>
+				<ee:transform doc:name="Transform - Error Response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Failed to retrieve logs: " ++ (error.description default "Unknown error"),
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+	<!-- ========================================== -->
+	<!-- CLIENT ENDPOINTS -->
+	<!-- ========================================== -->
+
+	<!-- GET /client/pppoe/me -->
+	<flow name="flow-client-pppoe-me-get" doc:name="flow-client-pppoe-me-get">
+		<http:listener config-ref="HTTP_Listener_config" path="/client/pppoe/me" doc:name="GET /client/pppoe/me">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		
+		<logger level="INFO" message="[flow-client-pppoe-me-get] - Request received" doc:name="Logger - Request"/>
+		
+		<!-- Validate JWT -->
+		<flow-ref name="subflow-validate-jwt" doc:name="Flow Reference - Validate JWT"/>
+		
+		<!-- Check client role -->
+		<choice doc:name="Choice - Is Client?">
+			<when expression="#[vars.role != 'CLIENT']">
+				<ee:transform doc:name="Transform - Forbidden">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Access forbidden: Client role required",
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[403]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<raise-error type="APP:FORBIDDEN" description="Client role required" doc:name="Raise error - Forbidden"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" message="[flow-client-pppoe-me-get] - Client role verified for user: #[vars.username]" doc:name="Logger - Client verified"/>
+			</otherwise>
+		</choice>
+		
+		<!-- Get PPP secrets -->
+		<flow-ref name="subflow-get-ppp-secrets" doc:name="Flow Reference - Get PPP Secrets"/>
+		<set-variable variableName="secrets" value="#[payload]" doc:name="Set Variable - secrets"/>
+		
+		<!-- Get PPP active connections -->
+		<flow-ref name="subflow-get-ppp-active" doc:name="Flow Reference - Get PPP Active"/>
+		<set-variable variableName="active" value="#[payload]" doc:name="Set Variable - active"/>
+		
+		<!-- Filter and consolidate data for authenticated user -->
+		<ee:transform doc:name="Transform - Client PPPoE Data">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+import consolidatePPPoEData from dwl::pppoe_mapper
+output application/json
+---
+do {
+	var allData = consolidatePPPoEData(vars.secrets, vars.active)
+	var clientData = (allData filter ($.username == vars.username))[0]
+	---
+	clientData default {
+		username: vars.username,
+		plan_profile: "",
+		comment: "",
+		online: false
+	}
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[flow-client-pppoe-me-get] - Response sent successfully for user: #[vars.username]" doc:name="Logger - Response"/>
+		
+		<error-handler>
+			<on-error-propagate type="APP:UNAUTHORIZED, APP:FORBIDDEN" doc:name="On Error Propagate - Auth">
+				<logger level="WARN" message="[flow-client-pppoe-me-get] - Authorization error: #[error.description]" doc:name="Logger - Auth Error"/>
+			</on-error-propagate>
+			<on-error-propagate type="ANY" doc:name="On Error Propagate - Any">
+				<logger level="ERROR" message="[flow-client-pppoe-me-get] - Error: #[error.description]" doc:name="Logger - Error"/>
+				<ee:transform doc:name="Transform - Error Response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Failed to retrieve client data: " ++ (error.description default "Unknown error"),
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+	<!-- GET /client/logs -->
+	<flow name="flow-client-logs-get" doc:name="flow-client-logs-get">
+		<http:listener config-ref="HTTP_Listener_config" path="/client/logs" doc:name="GET /client/logs">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		
+		<logger level="INFO" message="[flow-client-logs-get] - Request received with limit: #[attributes.queryParams.limit default 100]" doc:name="Logger - Request"/>
+		
+		<!-- Validate JWT -->
+		<flow-ref name="subflow-validate-jwt" doc:name="Flow Reference - Validate JWT"/>
+		
+		<!-- Check client role -->
+		<choice doc:name="Choice - Is Client?">
+			<when expression="#[vars.role != 'CLIENT']">
+				<ee:transform doc:name="Transform - Forbidden">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Access forbidden: Client role required",
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[403]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<raise-error type="APP:FORBIDDEN" description="Client role required" doc:name="Raise error - Forbidden"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" message="[flow-client-logs-get] - Client role verified for user: #[vars.username]" doc:name="Logger - Client verified"/>
+			</otherwise>
+		</choice>
+		
+		<set-variable variableName="topics" value="" doc:name="Set Variable - topics all"/>
+		<set-variable variableName="limit" value="1000" doc:name="Set Variable - limit high"/>
+		
+		<!-- Get logs -->
+		<flow-ref name="subflow-get-logs" doc:name="Flow Reference - Get Logs"/>
+		
+		<!-- Filter logs for authenticated user -->
+		<ee:transform doc:name="Transform - Filter Client Logs">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+(payload filter (
+	($.message default "") contains vars.username
+)) [0 to ((attributes.queryParams.limit default 100) as Number - 1)]]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[flow-client-logs-get] - Response sent successfully with #[sizeOf(payload)] logs for user: #[vars.username]" doc:name="Logger - Response"/>
+		
+		<error-handler>
+			<on-error-propagate type="APP:UNAUTHORIZED, APP:FORBIDDEN" doc:name="On Error Propagate - Auth">
+				<logger level="WARN" message="[flow-client-logs-get] - Authorization error: #[error.description]" doc:name="Logger - Auth Error"/>
+			</on-error-propagate>
+			<on-error-propagate type="ANY" doc:name="On Error Propagate - Any">
+				<logger level="ERROR" message="[flow-client-logs-get] - Error: #[error.description]" doc:name="Logger - Error"/>
+				<ee:transform doc:name="Transform - Error Response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Failed to retrieve logs: " ++ (error.description default "Unknown error"),
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+	<!-- GET /client/traffic -->
+	<flow name="flow-client-traffic-get" doc:name="flow-client-traffic-get">
+		<http:listener config-ref="HTTP_Listener_config" path="/client/traffic" doc:name="GET /client/traffic">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		
+		<logger level="INFO" message="[flow-client-traffic-get] - Request received" doc:name="Logger - Request"/>
+		
+		<!-- Validate JWT -->
+		<flow-ref name="subflow-validate-jwt" doc:name="Flow Reference - Validate JWT"/>
+		
+		<!-- Check client role -->
+		<choice doc:name="Choice - Is Client?">
+			<when expression="#[vars.role != 'CLIENT']">
+				<ee:transform doc:name="Transform - Forbidden">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Access forbidden: Client role required",
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[403]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<raise-error type="APP:FORBIDDEN" description="Client role required" doc:name="Raise error - Forbidden"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" message="[flow-client-traffic-get] - Client role verified for user: #[vars.username]" doc:name="Logger - Client verified"/>
+			</otherwise>
+		</choice>
+		
+		<!-- Get PPP active connections -->
+		<flow-ref name="subflow-get-ppp-active" doc:name="Flow Reference - Get PPP Active"/>
+		
+		<!-- Filter traffic data for authenticated user -->
+		<ee:transform doc:name="Transform - Client Traffic Data">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+do {
+	var clientConnection = (payload filter ($.name == vars.username))[0]
+	---
+	if (clientConnection != null)
+		{
+			username: vars.username,
+			online: true,
+			rx_bytes: clientConnection."rx-byte" default 0,
+			tx_bytes: clientConnection."tx-byte" default 0
+		}
+	else
+		{
+			username: vars.username,
+			online: false,
+			rx_bytes: 0,
+			tx_bytes: 0
+		}
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[flow-client-traffic-get] - Response sent successfully for user: #[vars.username]" doc:name="Logger - Response"/>
+		
+		<error-handler>
+			<on-error-propagate type="APP:UNAUTHORIZED, APP:FORBIDDEN" doc:name="On Error Propagate - Auth">
+				<logger level="WARN" message="[flow-client-traffic-get] - Authorization error: #[error.description]" doc:name="Logger - Auth Error"/>
+			</on-error-propagate>
+			<on-error-propagate type="ANY" doc:name="On Error Propagate - Any">
+				<logger level="ERROR" message="[flow-client-traffic-get] - Error: #[error.description]" doc:name="Logger - Error"/>
+				<ee:transform doc:name="Transform - Error Response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Failed to retrieve traffic data: " ++ (error.description default "Unknown error"),
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+</mule>

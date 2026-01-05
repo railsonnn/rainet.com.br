@@ -1,0 +1,15 @@
+{
+  "configs": [
+    "global.xml",
+    "security.xml",
+    "mikrotik-integration.xml",
+    "api.xml"
+  ],
+  "minMuleVersion": "4.9.0",
+  "javaSpecificationVersions": [
+    "17"
+  ],
+  "secureProperties": [
+    "mikrotik.api.password"
+  ]
+}

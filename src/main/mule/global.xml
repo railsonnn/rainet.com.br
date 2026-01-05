@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+		http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd">
+
+	<!-- Global property for environment selection -->
+	<global-property name="mule.env" value="dev" doc:name="Global Property - Environment" />
+	
+	<!-- Global property for encryption key (minimum 16 characters) -->
+	<global-property name="secure.key" value="mulesoft12345678" doc:name="Global Property - Secure Key" />
+
+	<!-- Configuration Properties -->
+	<configuration-properties file="config-${mule.env}.yaml" doc:name="Configuration Properties - Environment" />
+	
+	<!-- Secure Configuration Properties -->
+	<secure-properties:config name="Secure_Properties_Config" 
+		file="config-secure.yaml" 
+		key="${secure.key}" 
+		doc:name="Secure Properties Config">
+		<secure-properties:encrypt algorithm="AES" mode="CBC"/>
+	</secure-properties:config>
+
+	<!-- HTTP Listener Configuration -->
+	<http:listener-config name="HTTP_Listener_config" basePath="/api" doc:name="HTTP Listener config">
+		<http:listener-connection host="0.0.0.0" port="${http.port}" />
+	</http:listener-config>
+
+</mule>

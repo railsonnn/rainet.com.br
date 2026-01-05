@@ -1,0 +1,360 @@
+#%RAML 1.0
+title: MikroTik PPPoE Monitor API
+version: v1
+baseUri: https://api.example.com/api
+mediaType: application/json
+
+securitySchemes:
+  JWT:
+    type: x-custom
+    describedBy:
+      headers:
+        Authorization:
+          description: JWT token in Bearer format
+          type: string
+          example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+          required: true
+      responses:
+        401:
+          description: Unauthorized - Invalid or missing token
+          body:
+            application/json:
+              example: |
+                {
+                  "error": true,
+                  "message": "Authorization token is required",
+                  "timestamp": "2025-12-02T10:30:00Z"
+                }
+        403:
+          description: Forbidden - Insufficient permissions
+          body:
+            application/json:
+              example: |
+                {
+                  "error": true,
+                  "message": "Access forbidden: Admin role required",
+                  "timestamp": "2025-12-02T10:30:00Z"
+                }
+
+/auth:
+  /login:
+    post:
+      description: Authenticate user and generate JWT token
+      body:
+        application/json:
+          type: object
+          properties:
+            username:
+              type: string
+              required: true
+              example: admin
+            password:
+              type: string
+              required: true
+              example: admin123
+          example: |
+            {
+              "username": "admin",
+              "password": "admin123"
+            }
+      responses:
+        200:
+          description: Authentication successful
+          body:
+            application/json:
+              type: object
+              properties:
+                access_token:
+                  type: string
+                  description: JWT access token
+                token_type:
+                  type: string
+                  description: Token type (always "Bearer")
+                role:
+                  type: string
+                  enum: [ADMIN, CLIENT]
+                  description: User role
+              example: |
+                {
+                  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "token_type": "Bearer",
+                  "role": "ADMIN"
+                }
+        400:
+          description: Bad request - Missing credentials
+          body:
+            application/json:
+              example: |
+                {
+                  "error": true,
+                  "message": "Username and password are required",
+                  "timestamp": "2025-12-02T10:30:00Z"
+                }
+        401:
+          description: Unauthorized - Invalid credentials
+          body:
+            application/json:
+              example: |
+                {
+                  "error": true,
+                  "message": "Invalid credentials",
+                  "timestamp": "2025-12-02T10:30:00Z"
+                }
+
+/admin:
+  securedBy: [JWT]
+  description: Admin endpoints - Requires ADMIN role
+  
+  /system:
+    /resource:
+      get:
+        description: Get MikroTik system resource information (CPU, memory, uptime)
+        responses:
+          200:
+            description: System resource information retrieved successfully
+            body:
+              application/json:
+                example: |
+                  {
+                    "uptime": "1d 2h 30m",
+                    "cpu-load": 5,
+                    "free-memory": 512000000,
+                    "total-memory": 1024000000,
+                    "version": "7.11.2",
+                    "board-name": "RB4011iGS+",
+                    "architecture-name": "arm64"
+                  }
+          502:
+            description: Bad Gateway - Failed to connect to MikroTik
+            body:
+              application/json:
+                example: |
+                  {
+                    "error": true,
+                    "message": "Failed to retrieve system resource: Connection timeout",
+                    "timestamp": "2025-12-02T10:30:00Z"
+                  }
+  
+  /pppoe:
+    /overview:
+      get:
+        description: Get overview of all PPPoE clients with online status and traffic information
+        responses:
+          200:
+            description: PPPoE overview retrieved successfully
+            body:
+              application/json:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    username:
+                      type: string
+                    plan_profile:
+                      type: string
+                    comment:
+                      type: string
+                    online:
+                      type: boolean
+                    ip_address:
+                      type: string
+                      required: false
+                    uptime:
+                      type: string
+                      required: false
+                    rx_bytes:
+                      type: integer
+                      required: false
+                    tx_bytes:
+                      type: integer
+                      required: false
+                example: |
+                  [
+                    {
+                      "username": "cliente1",
+                      "plan_profile": "10MB",
+                      "comment": "Cliente teste",
+                      "online": true,
+                      "ip_address": "10.0.0.10",
+                      "uptime": "2h30m",
+                      "rx_bytes": 1048576,
+                      "tx_bytes": 524288
+                    },
+                    {
+                      "username": "cliente2",
+                      "plan_profile": "20MB",
+                      "comment": "Cliente VIP",
+                      "online": false
+                    }
+                  ]
+          502:
+            description: Bad Gateway - Failed to connect to MikroTik
+  
+  /logs:
+    get:
+      description: Get MikroTik logs with optional filtering by topic
+      queryParameters:
+        topic:
+          type: string
+          enum: [pppoe, error, warning, all]
+          default: all
+          description: Log topic filter
+          required: false
+        limit:
+          type: integer
+          default: 100
+          minimum: 1
+          maximum: 1000
+          description: Maximum number of logs to return
+          required: false
+      responses:
+        200:
+          description: Logs retrieved successfully
+          body:
+            application/json:
+              type: array
+              items:
+                type: object
+                properties:
+                  time:
+                    type: string
+                  topics:
+                    type: string
+                  message:
+                    type: string
+              example: |
+                [
+                  {
+                    "time": "2025-12-02 10:30:00",
+                    "topics": "pppoe,info",
+                    "message": "cliente1 logged in"
+                  },
+                  {
+                    "time": "2025-12-02 10:25:15",
+                    "topics": "pppoe,info",
+                    "message": "cliente2 logged out"
+                  }
+                ]
+        502:
+            description: Bad Gateway - Failed to connect to MikroTik
+
+/client:
+  securedBy: [JWT]
+  description: Client endpoints - Requires CLIENT role
+  
+  /pppoe:
+    /me:
+      get:
+        description: Get PPPoE information for the authenticated client
+        responses:
+          200:
+            description: Client PPPoE information retrieved successfully
+            body:
+              application/json:
+                type: object
+                properties:
+                  username:
+                    type: string
+                  plan_profile:
+                    type: string
+                  comment:
+                    type: string
+                  online:
+                    type: boolean
+                  ip_address:
+                    type: string
+                    required: false
+                  uptime:
+                    type: string
+                    required: false
+                  rx_bytes:
+                    type: integer
+                    required: false
+                  tx_bytes:
+                    type: integer
+                    required: false
+                example: |
+                  {
+                    "username": "cliente1",
+                    "plan_profile": "10MB",
+                    "comment": "Cliente teste",
+                    "online": true,
+                    "ip_address": "10.0.0.10",
+                    "uptime": "2h30m",
+                    "rx_bytes": 1048576,
+                    "tx_bytes": 524288
+                  }
+          502:
+            description: Bad Gateway - Failed to connect to MikroTik
+  
+  /logs:
+    get:
+      description: Get logs related to the authenticated client
+      queryParameters:
+        limit:
+          type: integer
+          default: 100
+          minimum: 1
+          maximum: 1000
+          description: Maximum number of logs to return
+          required: false
+      responses:
+        200:
+          description: Client logs retrieved successfully
+          body:
+            application/json:
+              type: array
+              items:
+                type: object
+                properties:
+                  time:
+                    type: string
+                  topics:
+                    type: string
+                  message:
+                    type: string
+              example: |
+                [
+                  {
+                    "time": "2025-12-02 10:30:00",
+                    "topics": "pppoe,info",
+                    "message": "cliente1 logged in"
+                  },
+                  {
+                    "time": "2025-12-02 09:15:30",
+                    "topics": "pppoe,info",
+                    "message": "cliente1 logged out"
+                  }
+                ]
+        502:
+            description: Bad Gateway - Failed to connect to MikroTik
+  
+  /traffic:
+    get:
+      description: Get real-time traffic information for the authenticated client
+      responses:
+        200:
+          description: Client traffic information retrieved successfully
+          body:
+            application/json:
+              type: object
+              properties:
+                username:
+                  type: string
+                online:
+                  type: boolean
+                rx_bytes:
+                  type: integer
+                  description: Received bytes
+                tx_bytes:
+                  type: integer
+                  description: Transmitted bytes
+              example: |
+                {
+                  "username": "cliente1",
+                  "online": true,
+                  "rx_bytes": 1048576,
+                  "tx_bytes": 524288
+                }
+        502:
+            description: Bad Gateway - Failed to connect to MikroTik

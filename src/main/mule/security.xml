@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+		http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+	<!-- ========================================== -->
+	<!-- FLOW: Login Authentication -->
+	<!-- ========================================== -->
+	<flow name="flow-auth-login" doc:name="flow-auth-login">
+		<http:listener config-ref="HTTP_Listener_config" path="/auth/login" doc:name="POST /auth/login">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.httpHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		
+		<logger level="INFO" message="[flow-auth-login] - Login attempt for user: #[payload.username default 'unknown']" doc:name="Logger - Login attempt"/>
+		
+		<!-- Validate input -->
+		<ee:transform doc:name="Validate Input">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	username: payload.username default "",
+	password: payload.password default ""
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<set-variable variableName="loginUsername" value="#[payload.username]" doc:name="Set Variable - loginUsername"/>
+		<set-variable variableName="loginPassword" value="#[payload.password]" doc:name="Set Variable - loginPassword"/>
+		
+		<choice doc:name="Choice - Validate Credentials">
+			<!-- Check if username and password are provided -->
+			<when expression="#[vars.loginUsername == '' or vars.loginPassword == '']">
+				<ee:transform doc:name="Transform - Missing Credentials">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Username and password are required",
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[400]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<!-- Check admin credentials -->
+			<when expression="#[vars.loginUsername == 'admin' and vars.loginPassword == p('users.admin.password')]">
+				<set-variable variableName="authenticatedUsername" value="#[vars.loginUsername]" doc:name="Set Variable - authenticatedUsername"/>
+				<set-variable variableName="authenticatedRole" value="ADMIN" doc:name="Set Variable - authenticatedRole"/>
+				<set-payload value="#[output application/java --- {username: vars.authenticatedUsername, role: vars.authenticatedRole}]" doc:name="Set Payload - Auth Data"/>
+				<flow-ref name="subflow-generate-jwt" doc:name="Flow Reference - Generate JWT"/>
+			</when>
+			<!-- Check client credentials -->
+			<when expression="#[vars.loginUsername == 'cliente1' and vars.loginPassword == p('users.cliente1.password')]">
+				<set-variable variableName="authenticatedUsername" value="#[vars.loginUsername]" doc:name="Set Variable - authenticatedUsername"/>
+				<set-variable variableName="authenticatedRole" value="CLIENT" doc:name="Set Variable - authenticatedRole"/>
+				<set-payload value="#[output application/java --- {username: vars.authenticatedUsername, role: vars.authenticatedRole}]" doc:name="Set Payload - Auth Data"/>
+				<flow-ref name="subflow-generate-jwt" doc:name="Flow Reference - Generate JWT"/>
+			</when>
+			<!-- Invalid credentials -->
+			<otherwise>
+				<ee:transform doc:name="Transform - Invalid Credentials">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Invalid credentials",
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[401]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		
+		<logger level="INFO" message="[flow-auth-login] - Authentication result: #[if (vars.httpStatus == null) 'Success' else 'Failed']" doc:name="Logger - Auth result"/>
+		
+		<error-handler>
+			<on-error-propagate type="ANY" doc:name="On Error Propagate">
+				<logger level="ERROR" message="[flow-auth-login] - Error: #[error.description]" doc:name="Logger - Error"/>
+				<ee:transform doc:name="Transform - Error Response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Authentication error: " ++ (error.description default "Unknown error"),
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[500]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Generate JWT Token -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-generate-jwt" doc:name="subflow-generate-jwt">
+		<logger level="INFO" message="[subflow-generate-jwt] - Generating JWT for user: #[payload.username], role: #[payload.role]" doc:name="Logger - Generate JWT"/>
+		
+		<set-variable variableName="jwtUsername" value="#[payload.username]" doc:name="Set Variable - jwtUsername"/>
+		<set-variable variableName="jwtRole" value="#[payload.role]" doc:name="Set Variable - jwtRole"/>
+		
+		<!-- Create JWT Algorithm -->
+		<java:invoke-static class="com.auth0.jwt.algorithms.Algorithm" method="HMAC256(java.lang.String)" doc:name="Invoke static - Algorithm.HMAC256">
+			<java:args>#[{
+				arg0: p('jwt.secret')
+			}]</java:args>
+		</java:invoke-static>
+		
+		<set-variable variableName="algorithm" value="#[payload]" doc:name="Set Variable - algorithm"/>
+		
+		<!-- Create JWT Builder -->
+		<java:invoke-static class="com.auth0.jwt.JWT" method="create()" doc:name="Invoke static - JWT.create()">
+			<java:args>#[{}]</java:args>
+		</java:invoke-static>
+		
+		<!-- Add subject (username) -->
+		<java:invoke instance="#[payload]" class="com.auth0.jwt.JWTCreator$Builder" method="withSubject(java.lang.String)" doc:name="Invoke - withSubject">
+			<java:args>#[{
+				arg0: vars.jwtUsername
+			}]</java:args>
+		</java:invoke>
+		
+		<!-- Add role claim -->
+		<java:invoke instance="#[payload]" class="com.auth0.jwt.JWTCreator$Builder" method="withClaim(java.lang.String,java.lang.String)" doc:name="Invoke - withClaim role">
+			<java:args>#[{
+				arg0: "role",
+				arg1: vars.jwtRole
+			}]</java:args>
+		</java:invoke>
+        
+		<!-- Preserve builder before payload is replaced by expiration transform -->
+		<set-variable variableName="jwtBuilder" value="#[payload]" doc:name="Set Variable - jwtBuilder"/>
+		
+		<!-- Add expiration -->
+		<ee:transform doc:name="Transform - Calculate Expiration">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+import * from dw::core::Periods
+output application/java
+---
+(now() + minutes(p('jwt.expiration.minutes') as Number)) as String {format: "yyyy-MM-dd'T'HH:mm:ss"} as LocalDateTime as Date]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<set-variable variableName="expirationDate" value="#[payload]" doc:name="Set Variable - expirationDate"/>
+		
+		<java:invoke instance="#[vars.jwtBuilder]" class="com.auth0.jwt.JWTCreator$Builder" method="withExpiresAt(java.util.Date)" doc:name="Invoke - withExpiresAt">
+			<java:args>#[{
+				arg0: vars.expirationDate
+			}]</java:args>
+		</java:invoke>
+		
+		<set-variable variableName="jwtBuilder" value="#[payload]" doc:name="Set Variable - jwtBuilder"/>
+		
+		<!-- Sign and generate token -->
+		<java:invoke instance="#[vars.jwtBuilder]" class="com.auth0.jwt.JWTCreator$Builder" method="sign(com.auth0.jwt.algorithms.Algorithm)" doc:name="Invoke - sign">
+			<java:args>#[{
+				arg0: vars.algorithm
+			}]</java:args>
+		</java:invoke>
+		
+		<set-variable variableName="token" value="#[payload]" doc:name="Set Variable - token"/>
+		
+		<ee:transform doc:name="Transform - JWT Response">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	access_token: vars.token,
+	token_type: "Bearer",
+	role: vars.jwtRole
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[subflow-generate-jwt] - JWT generated successfully" doc:name="Logger - JWT generated"/>
+	</sub-flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Validate JWT Token -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-validate-jwt" doc:name="subflow-validate-jwt">
+		<logger level="INFO" message="[subflow-validate-jwt] - Validating JWT token" doc:name="Logger - Validate JWT"/>
+		
+		<!-- Extract token from Authorization header -->
+		<ee:transform doc:name="Transform - Extract Token">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+import extractToken from dwl::jwt_utils
+output application/java
+---
+{
+	authHeader: attributes.headers.authorization default "",
+	token: extractToken(attributes.headers.authorization default "")
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<set-variable variableName="token" value="#[payload.token]" doc:name="Set Variable - token"/>
+		
+		<!-- Validate token exists -->
+		<choice doc:name="Choice - Token exists?">
+			<when expression="#[vars.token == null]">
+				<ee:transform doc:name="Transform - Missing Token">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Authorization token is required",
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[401]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<raise-error type="APP:UNAUTHORIZED" description="Missing authorization token" doc:name="Raise error - Unauthorized"/>
+			</when>
+			<otherwise>
+				<!-- Verify JWT signature and extract claims -->
+				<java:invoke-static class="com.auth0.jwt.algorithms.Algorithm" method="HMAC256(java.lang.String)" doc:name="Invoke static - Algorithm.HMAC256">
+					<java:args>#[{
+						arg0: p('jwt.secret')
+					}]</java:args>
+				</java:invoke-static>
+				
+				<set-variable variableName="algorithm" value="#[payload]" doc:name="Set Variable - algorithm"/>
+				
+				<java:invoke-static class="com.auth0.jwt.JWT" method="require(com.auth0.jwt.algorithms.Algorithm)" doc:name="Invoke static - JWT.require">
+					<java:args>#[{
+						arg0: vars.algorithm
+					}]</java:args>
+				</java:invoke-static>
+				
+				<java:invoke instance="#[payload]" class="com.auth0.jwt.interfaces.JWTVerifier$BaseVerification" method="build()" doc:name="Invoke - build">
+					<java:args>#[{}]</java:args>
+				</java:invoke>
+				
+				<set-variable variableName="verifier" value="#[payload]" doc:name="Set Variable - verifier"/>
+				
+				<java:invoke instance="#[vars.verifier]" class="com.auth0.jwt.JWTVerifier" method="verify(java.lang.String)" doc:name="Invoke - verify">
+					<java:args>#[{
+						arg0: vars.token
+					}]</java:args>
+				</java:invoke>
+				
+				<set-variable variableName="decodedJWT" value="#[payload]" doc:name="Set Variable - decodedJWT"/>
+				
+				<!-- Extract username from subject -->
+				<java:invoke instance="#[vars.decodedJWT]" class="com.auth0.jwt.interfaces.DecodedJWT" method="getSubject()" doc:name="Invoke - getSubject">
+					<java:args>#[{}]</java:args>
+				</java:invoke>
+				
+				<set-variable variableName="username" value="#[payload]" doc:name="Set Variable - username"/>
+				
+				<!-- Extract role from claims -->
+				<java:invoke instance="#[vars.decodedJWT]" class="com.auth0.jwt.interfaces.DecodedJWT" method="getClaim(java.lang.String)" doc:name="Invoke - getClaim role">
+					<java:args>#[{
+						arg0: "role"
+					}]</java:args>
+				</java:invoke>
+				
+				<java:invoke instance="#[payload]" class="com.auth0.jwt.interfaces.Claim" method="asString()" doc:name="Invoke - asString">
+					<java:args>#[{}]</java:args>
+				</java:invoke>
+				
+				<set-variable variableName="role" value="#[payload]" doc:name="Set Variable - role"/>
+				
+				<logger level="INFO" message="[subflow-validate-jwt] - JWT validated successfully for user: #[vars.username], role: #[vars.role]" doc:name="Logger - JWT validated"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Check Admin Role -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-check-admin-role" doc:name="subflow-check-admin-role">
+		<logger level="INFO" message="[subflow-check-admin-role] - Checking admin role for user: #[vars.username]" doc:name="Logger - Check admin"/>
+		
+		<choice doc:name="Choice - Is Admin?">
+			<when expression="#[vars.role != 'ADMIN']">
+				<ee:transform doc:name="Transform - Forbidden">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error: true,
+	message: "Access forbidden: Admin role required",
+	timestamp: now()
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[403]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<raise-error type="APP:FORBIDDEN" description="Admin role required" doc:name="Raise error - Forbidden"/>
+			</when>
+			<otherwise>
+				<logger level="INFO" message="[subflow-check-admin-role] - Admin role verified" doc:name="Logger - Admin verified"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+
+</mule>

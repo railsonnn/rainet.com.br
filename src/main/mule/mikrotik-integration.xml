@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:java="http://www.mulesoft.org/schema/mule/java"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+		http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Connect to MikroTik API -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-mikrotik-connect" doc:name="subflow-mikrotik-connect">
+		<logger level="INFO" message="[subflow-mikrotik-connect] - Connecting to MikroTik at #[p('mikrotik.api.host')]:#[p('mikrotik.api.port')]" doc:name="Logger - Connecting"/>
+		
+		<!-- Create ApiConnection instance -->
+		<java:new class="me.legrange.mikrotik.ApiConnection" constructor="ApiConnection(java.lang.String,int,int)" doc:name="New - ApiConnection">
+			<java:args>#[{
+				arg0: p('mikrotik.api.host'),
+				arg1: p('mikrotik.api.port') as Number,
+				arg2: 5000
+			}]</java:args>
+		</java:new>
+		
+		<set-variable variableName="mikrotikConnection" value="#[payload]" doc:name="Set Variable - mikrotikConnection"/>
+		
+		<!-- Login to MikroTik -->
+		<java:invoke instance="#[vars.mikrotikConnection]" class="me.legrange.mikrotik.ApiConnection" method="login(java.lang.String,java.lang.String)" doc:name="Invoke - login">
+			<java:args>#[{
+				arg0: p('mikrotik.api.user'),
+				arg1: p('secure::mikrotik.api.password')
+			}]</java:args>
+		</java:invoke>
+		
+		<logger level="INFO" message="[subflow-mikrotik-connect] - Connected successfully to MikroTik" doc:name="Logger - Connected"/>
+		
+		<set-payload value="#[vars.mikrotikConnection]" doc:name="Set Payload - Connection"/>
+	</sub-flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Execute MikroTik Command -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-mikrotik-execute-command" doc:name="subflow-mikrotik-execute-command">
+		<logger level="INFO" message="[subflow-mikrotik-execute-command] - Executing command: #[vars.command]" doc:name="Logger - Execute command"/>
+		
+		<!-- Connect to MikroTik -->
+		<flow-ref name="subflow-mikrotik-connect" doc:name="Flow Reference - Connect"/>
+		
+		<set-variable variableName="connection" value="#[payload]" doc:name="Set Variable - connection"/>
+		
+		<!-- Execute command -->
+		<java:invoke instance="#[vars.connection]" class="me.legrange.mikrotik.ApiConnection" method="execute(java.lang.String)" doc:name="Invoke - execute">
+			<java:args>#[{
+				arg0: vars.command
+			}]</java:args>
+		</java:invoke>
+		
+		<set-variable variableName="commandResult" value="#[payload]" doc:name="Set Variable - commandResult"/>
+		
+		<!-- Close connection -->
+		<java:invoke instance="#[vars.connection]" class="me.legrange.mikrotik.ApiConnection" method="close()" doc:name="Invoke - close">
+			<java:args>#[{}]</java:args>
+		</java:invoke>
+		
+		<set-payload value="#[vars.commandResult]" doc:name="Set Payload - Result"/>
+		
+		<logger level="INFO" message="[subflow-mikrotik-execute-command] - Command executed successfully" doc:name="Logger - Command executed"/>
+	</sub-flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Get System Resource -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-get-system-resource" doc:name="subflow-get-system-resource">
+		<logger level="INFO" message="[subflow-get-system-resource] - Getting system resource information" doc:name="Logger - Get system resource"/>
+		
+		<set-variable variableName="command" value="/system/resource/print" doc:name="Set Variable - command"/>
+		
+		<flow-ref name="subflow-mikrotik-execute-command" doc:name="Flow Reference - Execute command"/>
+		
+		<!-- Transform result to JSON -->
+		<ee:transform doc:name="Transform - System Resource">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload[0] default {}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[subflow-get-system-resource] - System resource retrieved successfully" doc:name="Logger - Retrieved"/>
+	</sub-flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Get PPP Secrets -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-get-ppp-secrets" doc:name="subflow-get-ppp-secrets">
+		<logger level="INFO" message="[subflow-get-ppp-secrets] - Getting PPP secrets" doc:name="Logger - Get PPP secrets"/>
+		
+		<set-variable variableName="command" value="/ppp/secret/print" doc:name="Set Variable - command"/>
+		
+		<flow-ref name="subflow-mikrotik-execute-command" doc:name="Flow Reference - Execute command"/>
+		
+		<!-- Transform result to JSON -->
+		<ee:transform doc:name="Transform - PPP Secrets">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload default []]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[subflow-get-ppp-secrets] - PPP secrets retrieved: #[sizeOf(payload)] records" doc:name="Logger - Retrieved"/>
+	</sub-flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Get PPP Active Connections -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-get-ppp-active" doc:name="subflow-get-ppp-active">
+		<logger level="INFO" message="[subflow-get-ppp-active] - Getting active PPP connections" doc:name="Logger - Get PPP active"/>
+		
+		<set-variable variableName="command" value="/ppp/active/print" doc:name="Set Variable - command"/>
+		
+		<flow-ref name="subflow-mikrotik-execute-command" doc:name="Flow Reference - Execute command"/>
+		
+		<!-- Transform result to JSON -->
+		<ee:transform doc:name="Transform - PPP Active">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload default []]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[subflow-get-ppp-active] - Active PPP connections retrieved: #[sizeOf(payload)] connections" doc:name="Logger - Retrieved"/>
+	</sub-flow>
+
+	<!-- ========================================== -->
+	<!-- SUBFLOW: Get Logs -->
+	<!-- ========================================== -->
+	<sub-flow name="subflow-get-logs" doc:name="subflow-get-logs">
+		<logger level="INFO" message="[subflow-get-logs] - Getting logs with topics: #[vars.topics default 'all'], limit: #[vars.limit default 100]" doc:name="Logger - Get logs"/>
+		
+		<!-- Build command with filters -->
+		<ee:transform doc:name="Transform - Build Log Command">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+	command: "/log/print"
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<set-variable variableName="command" value="#[payload.command]" doc:name="Set Variable - command"/>
+		
+		<flow-ref name="subflow-mikrotik-execute-command" doc:name="Flow Reference - Execute command"/>
+		
+		<!-- Transform and filter result -->
+		<ee:transform doc:name="Transform - Logs">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+(payload default []) filter (
+	if (vars.topics != null and vars.topics != "")
+		($.topics default "" contains vars.topics)
+	else
+		true
+) [0 to ((vars.limit default 100) as Number - 1)]]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		
+		<logger level="INFO" message="[subflow-get-logs] - Logs retrieved: #[sizeOf(payload)] records" doc:name="Logger - Retrieved"/>
+	</sub-flow>
+
+</mule>
